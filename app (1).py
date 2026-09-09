@@ -8,7 +8,7 @@ from google import genai
 from google.genai import types
 from docx import Document
 
-MODEL = "gemini-2.5-flash"
+MODEL = "gemini-3.6-flash"
 MAX_TEXT_CHARS = 120_000
 
 st.set_page_config(
