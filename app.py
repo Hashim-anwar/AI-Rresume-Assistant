@@ -1,22 +1,13 @@
-import base64
+```python
 import io
 import json
 import os
 import re
 
 import streamlit as st
-from google import genai
 from docx import Document
-
-
-# ============================================================
-# CONFIGURATION
-# ============================================================
-
-MODEL = "gemini-3.6-flash"
-
-MAX_TEXT_CHARS = 120_000
-MAX_PDF_BYTES = 50 * 1024 * 1024
+from groq import Groq
+from pypdf import PdfReader
 
 
 # ============================================================
@@ -31,156 +22,10 @@ st.set_page_config(
 
 
 # ============================================================
-# PAGE HEADER
+# CONFIGURATION
 # ============================================================
 
-st.title("📄 Resume ATS Analyzer")
-
-st.caption(
-    "Upload a resume to get an AI-estimated ATS compatibility "
-    "score and actionable improvements."
-)
-
-
-# ============================================================
-# API KEY
-# ============================================================
-
-def get_api_key():
-    try:
-        key = st.secrets.get("GEMINI_API_KEY")
-    except Exception:
-        key = None
-
-    return key or os.getenv("GEMINI_API_KEY")
-
-
-# ============================================================
-# DOCX TEXT EXTRACTION
-# ============================================================
-
-def extract_docx_text(data: bytes) -> str:
-
-    doc = Document(io.BytesIO(data))
-
-    parts = []
-
-    # Paragraphs
-    for paragraph in doc.paragraphs:
-
-        text = paragraph.text.strip()
-
-        if text:
-            parts.append(text)
-
-    # Tables
-    for table in doc.tables:
-
-        for row in table.rows:
-
-            cells = []
-
-            for cell in row.cells:
-
-                text = cell.text.strip()
-
-                if text:
-                    cells.append(text)
-
-            if cells:
-                parts.append(" | ".join(cells))
-
-    return "\n".join(parts)
-
-
-# ============================================================
-# FILE EXTRACTION
-# ============================================================
-
-def extract_resume(uploaded_file):
-
-    data = uploaded_file.getvalue()
-
-    filename = uploaded_file.name.lower()
-
-    # --------------------------------------------------------
-    # TXT
-    # --------------------------------------------------------
-
-    if filename.endswith(".txt"):
-
-        text = data.decode(
-            "utf-8",
-            errors="ignore",
-        )
-
-        return text, None
-
-    # --------------------------------------------------------
-    # DOCX
-    # --------------------------------------------------------
-
-    if filename.endswith(".docx"):
-
-        text = extract_docx_text(data)
-
-        return text, None
-
-    # --------------------------------------------------------
-    # PDF
-    # --------------------------------------------------------
-
-    if filename.endswith(".pdf"):
-
-        if len(data) > MAX_PDF_BYTES:
-
-            raise ValueError(
-                "PDF is larger than 50 MB. "
-                "Please upload a smaller PDF."
-            )
-
-        return None, data
-
-    # --------------------------------------------------------
-    # Unsupported
-    # --------------------------------------------------------
-
-    raise ValueError(
-        "Unsupported file type. "
-        "Please upload PDF, DOCX, or TXT."
-    )
-
-
-# ============================================================
-# JSON CLEANING
-# ============================================================
-
-def clean_json(text: str):
-
-    if not text:
-        raise ValueError(
-            "Gemini returned an empty response."
-        )
-
-    text = text.strip()
-
-    # Remove Markdown JSON fences if present
-    if text.startswith("```"):
-
-        text = re.sub(
-            r"^```(?:json)?\s*",
-            "",
-            text,
-            flags=re.IGNORECASE,
-        )
-
-        text = re.sub(
-            r"\s*```$",
-            "",
-            text,
-        )
-
-    return json.loads(text)
+MODEL = "openai/gpt-oss-20b"
 
 
 # ============================================================
@@ -188,67 +33,58 @@ def clean_json(text: str):
 # ============================================================
 
 ATS_SCHEMA = {
-
     "type": "object",
-
     "properties": {
-
         "ats_score": {
             "type": "integer",
             "minimum": 0,
             "maximum": 100,
         },
-
         "score_label": {
             "type": "string",
-            "enum": [
-                "Poor",
-                "Needs Improvement",
-                "Good",
-                "Very Good",
-                "Excellent",
-            ],
         },
-
         "summary": {
             "type": "string",
         },
-
         "category_scores": {
-
             "type": "object",
-
             "properties": {
-
                 "structure_formatting": {
                     "type": "integer",
+                    "minimum": 0,
+                    "maximum": 20,
                 },
-
                 "contact_summary": {
                     "type": "integer",
+                    "minimum": 0,
+                    "maximum": 10,
                 },
-
                 "skills_keywords": {
                     "type": "integer",
+                    "minimum": 0,
+                    "maximum": 20,
                 },
-
                 "experience": {
                     "type": "integer",
+                    "minimum": 0,
+                    "maximum": 25,
                 },
-
                 "education_certifications": {
                     "type": "integer",
+                    "minimum": 0,
+                    "maximum": 10,
                 },
-
                 "clarity_consistency": {
                     "type": "integer",
+                    "minimum": 0,
+                    "maximum": 10,
                 },
-
                 "ats_risk_factors": {
                     "type": "integer",
+                    "minimum": 0,
+                    "maximum": 5,
                 },
             },
-
             "required": [
                 "structure_formatting",
                 "contact_summary",
@@ -258,107 +94,77 @@ ATS_SCHEMA = {
                 "clarity_consistency",
                 "ats_risk_factors",
             ],
+            "additionalProperties": False,
         },
-
         "strengths": {
-
             "type": "array",
-
             "items": {
                 "type": "string",
             },
         },
-
         "improvements": {
-
             "type": "array",
-
             "items": {
-
                 "type": "object",
-
                 "properties": {
-
                     "priority": {
                         "type": "string",
-                        "enum": [
-                            "High",
-                            "Medium",
-                            "Low",
-                        ],
                     },
-
                     "issue": {
                         "type": "string",
                     },
-
                     "recommendation": {
                         "type": "string",
                     },
                 },
-
                 "required": [
                     "priority",
                     "issue",
                     "recommendation",
                 ],
+                "additionalProperties": False,
             },
         },
-
         "missing_keywords": {
-
             "type": "array",
-
             "items": {
                 "type": "string",
             },
         },
-
         "formatting_risks": {
-
             "type": "array",
-
             "items": {
                 "type": "string",
             },
         },
-
         "keyword_alignment": {
             "type": "string",
         },
-
         "section_feedback": {
-
             "type": "object",
-
             "properties": {
-
                 "summary": {
                     "type": "string",
                 },
-
                 "skills": {
                     "type": "string",
                 },
-
                 "experience": {
                     "type": "string",
                 },
-
                 "education": {
                     "type": "string",
                 },
             },
-
             "required": [
                 "summary",
                 "skills",
                 "experience",
                 "education",
             ],
+            "additionalProperties": False,
         },
     },
-
     "required": [
         "ats_score",
         "score_label",
@@ -371,244 +177,287 @@ ATS_SCHEMA = {
         "keyword_alignment",
         "section_feedback",
     ],
+    "additionalProperties": False,
 }
 
 
 # ============================================================
-# PROMPT
+# SYSTEM PROMPT
 # ============================================================
 
-def build_prompt(
-    resume_text,
-    job_description,
-):
+SYSTEM_PROMPT = """
+You are an expert ATS resume analyzer and professional recruiter.
 
-    # --------------------------------------------------------
-    # Resume
-    # --------------------------------------------------------
-
-    if resume_text:
-
-        resume_content = resume_text[:MAX_TEXT_CHARS]
-
-    else:
-
-        resume_content = (
-            "The resume is supplied as a PDF document. "
-            "Analyze the PDF document itself."
-        )
-
-    # --------------------------------------------------------
-    # Job description
-    # --------------------------------------------------------
-
-    if job_description and job_description.strip():
-
-        job_content = job_description.strip()
-
-    else:
-
-        job_content = "No job description provided."
-
-    # --------------------------------------------------------
-    # Prompt
-    # --------------------------------------------------------
-
-    return f"""
-You are an expert ATS resume evaluator and senior recruiter.
-
-Analyze the uploaded resume conservatively.
+Your task is to analyze a resume conservatively and realistically.
 
 IMPORTANT RULES:
 
-- Produce an ATS COMPATIBILITY ESTIMATE.
-- Do not claim that the score represents any specific
-  company's proprietary ATS.
-- Do not invent facts.
-- Do not invent experience.
-- Do not invent skills.
-- Do not invent employers.
-- Do not invent dates.
-- Do not invent certifications.
-- Do not invent achievements.
-- Base recommendations only on information actually
-  present in the resume.
-- If a job description is provided, evaluate keyword
-  alignment against it.
-- If no job description is provided, evaluate general
-  ATS readiness only.
+1. Never invent information that is not present in the resume.
+2. Never assume a skill, qualification, certification, job title,
+   achievement, degree, or technology unless supported by the resume.
+3. Give an ATS compatibility estimate, not a guarantee of getting hired.
+4. Be objective and constructive.
+5. Do not penalize a candidate simply because something is not present
+   unless it is genuinely relevant to ATS performance.
+6. Do not reward imaginary achievements.
+7. Separate formatting/ATS issues from actual candidate quality.
+8. If a job description is provided, compare the resume against it.
+9. Identify important keywords from the job description that are missing
+   from the resume.
+10. Do not recommend adding a keyword unless the candidate actually has
+    relevant experience with it.
+11. Keep recommendations practical and specific.
 
-SCORING RUBRIC — 100 POINTS TOTAL:
+ATS SCORE:
 
-1. ATS-friendly structure and formatting: 20
-2. Contact information and professional summary: 10
-3. Skills and keyword coverage: 20
-4. Work experience quality, relevance, and measurable
-   achievements: 25
-5. Education/certifications: 10
-6. Clarity, consistency, grammar, and readability: 10
-7. ATS risk factors: 5
+The total score must be 100 points.
 
-CATEGORY MAXIMUMS:
+1. Structure and formatting: 20 points
+2. Contact information and summary: 10 points
+3. Skills and keywords: 20 points
+4. Professional experience: 25 points
+5. Education and certifications: 10 points
+6. Clarity and consistency: 10 points
+7. ATS risk factors: 5 points
 
-structure_formatting = 20
-contact_summary = 10
-skills_keywords = 20
-experience = 25
-education_certifications = 10
-clarity_consistency = 10
-ats_risk_factors = 5
+The final ats_score must equal the sum of the seven category scores.
 
-Score conservatively if information is missing.
+SCORING GUIDANCE:
 
-JOB DESCRIPTION:
+90-100 = Excellent ATS readiness
+80-89  = Very good
+70-79  = Good but improvements recommended
+60-69  = Needs improvement
+Below 60 = Significant ATS improvements needed
 
-{job_content}
+Consider common ATS risks such as:
 
+- tables
+- columns
+- text boxes
+- headers/footers containing important information
+- graphics
+- icons replacing text
+- unusual symbols
+- excessive formatting
+- inconsistent dates
+- inconsistent job titles
+- missing contact information
+- poor section headings
+- keyword stuffing
+- overly long paragraphs
+- unclear work history
+- missing measurable achievements
 
-RESUME:
+For job matching:
 
-{resume_content}
+- Identify important keywords present in the job description.
+- Identify relevant keywords already present in the resume.
+- Identify potentially missing keywords.
+- Do not tell the candidate to add a keyword if the resume provides
+  no evidence that they have that skill.
 
-
-Return ONLY valid JSON.
-
-The JSON must contain exactly these main fields:
-
-{{
-  "ats_score": 0,
-
-  "score_label": "Poor",
-
-  "summary": "short overall assessment",
-
-  "category_scores": {{
-    "structure_formatting": 0,
-    "contact_summary": 0,
-    "skills_keywords": 0,
-    "experience": 0,
-    "education_certifications": 0,
-    "clarity_consistency": 0,
-    "ats_risk_factors": 0
-  }},
-
-  "strengths": [
-    "strength"
-  ],
-
-  "improvements": [
-    {{
-      "priority": "High",
-      "issue": "issue",
-      "recommendation": "recommendation"
-    }}
-  ],
-
-  "missing_keywords": [
-    "keyword"
-  ],
-
-  "formatting_risks": [
-    "risk"
-  ],
-
-  "keyword_alignment": "keyword alignment assessment",
-
-  "section_feedback": {{
-    "summary": "summary feedback",
-    "skills": "skills feedback",
-    "experience": "experience feedback",
-    "education": "education feedback"
-  }}
-}}
+Return ONLY valid JSON matching the provided schema.
 """
 
 
 # ============================================================
-# GEMINI ANALYSIS
+# FILE EXTRACTION
 # ============================================================
+
+def extract_pdf_text(file_bytes):
+    """Extract text from a PDF."""
+    try:
+        reader = PdfReader(io.BytesIO(file_bytes))
+
+        pages = []
+
+        for page in reader.pages:
+            text = page.extract_text() or ""
+            pages.append(text)
+
+        return "\n".join(pages).strip()
+
+    except Exception as exc:
+        raise RuntimeError(
+            f"Could not read PDF: {exc}"
+        ) from exc
+
+
+def extract_docx_text(file_bytes):
+    """Extract paragraphs and tables from DOCX."""
+    try:
+        document = Document(io.BytesIO(file_bytes))
+
+        parts = []
+
+        # Paragraphs
+        for paragraph in document.paragraphs:
+            text = paragraph.text.strip()
+
+            if text:
+                parts.append(text)
+
+        # Tables
+        for table in document.tables:
+            for row in table.rows:
+                cells = []
+
+                for cell in row.cells:
+                    cell_text = cell.text.strip()
+
+                    if cell_text:
+                        cells.append(cell_text)
+
+                if cells:
+                    parts.append(" | ".join(cells))
+
+        return "\n".join(parts).strip()
+
+    except Exception as exc:
+        raise RuntimeError(
+            f"Could not read DOCX: {exc}"
+        ) from exc
+
+
+def extract_txt_text(file_bytes):
+    """Extract text from TXT."""
+    try:
+        return file_bytes.decode(
+            "utf-8",
+            errors="ignore"
+        ).strip()
+
+    except Exception as exc:
+        raise RuntimeError(
+            f"Could not read TXT file: {exc}"
+        ) from exc
+
+
+def extract_resume_text(uploaded_file):
+    """Detect file type and extract resume text."""
+
+    file_bytes = uploaded_file.getvalue()
+    filename = uploaded_file.name.lower()
+
+    if filename.endswith(".pdf"):
+        return extract_pdf_text(file_bytes)
+
+    if filename.endswith(".docx"):
+        return extract_docx_text(file_bytes)
+
+    if filename.endswith(".txt"):
+        return extract_txt_text(file_bytes)
+
+    raise RuntimeError(
+        "Unsupported file type. Please upload PDF, DOCX, or TXT."
+    )
+
+
+# ============================================================
+# TEXT CLEANING
+# ============================================================
+
+def clean_text(text):
+    """Clean excessive whitespace while preserving useful structure."""
+
+    if not text:
+        return ""
+
+    text = text.replace("\x00", " ")
+
+    # Normalize line endings
+    text = text.replace("\r\n", "\n")
+    text = text.replace("\r", "\n")
+
+    # Remove excessive spaces
+    text = re.sub(r"[ \t]+", " ", text)
+
+    # Remove excessive blank lines
+    text = re.sub(r"\n{3,}", "\n\n", text)
+
+    return text.strip()
+
+
+# ============================================================
+# GROQ API
+# ============================================================
+
+def get_groq_api_key():
+    """Get Groq API key from Streamlit secrets or environment."""
+
+    try:
+        api_key = st.secrets.get("GROQ_API_KEY")
+    except Exception:
+        api_key = None
+
+    if not api_key:
+        api_key = os.getenv("GROQ_API_KEY")
+
+    return api_key
+
 
 def analyze_resume(
     resume_text,
-    pdf_data,
-    job_description,
+    job_description="",
 ):
+    """Send resume to Groq and return structured ATS analysis."""
 
-    # --------------------------------------------------------
-    # API key
-    # --------------------------------------------------------
-
-    api_key = get_api_key()
+    api_key = get_groq_api_key()
 
     if not api_key:
-
         raise RuntimeError(
-            "GEMINI_API_KEY is not configured. "
-            "Add GEMINI_API_KEY to Streamlit Cloud "
-            "→ App settings → Secrets."
+            "GROQ_API_KEY is not configured. "
+            "Add GROQ_API_KEY to Streamlit Secrets."
         )
 
-    # --------------------------------------------------------
-    # Gemini client
-    # --------------------------------------------------------
+    client = Groq(api_key=api_key)
 
-    client = genai.Client(
-        api_key=api_key
-    )
+    job_text = job_description.strip()
 
-    # --------------------------------------------------------
-    # Prompt
-    # --------------------------------------------------------
+    if not job_text:
+        job_text = (
+            "No job description was provided. "
+            "Analyze the resume for general ATS readiness."
+        )
 
-    prompt = build_prompt(
-        resume_text,
-        job_description,
-    )
+    user_prompt = f"""
+RESUME:
 
-    # --------------------------------------------------------
-    # Prepare Interactions API input
-    # --------------------------------------------------------
+{resume_text}
 
-    if pdf_data is not None:
 
-        pdf_base64 = base64.b64encode(
-            pdf_data
-        ).decode("utf-8")
+JOB DESCRIPTION:
 
-        input_data = [
+{job_text}
 
-            {
-                "type": "text",
-                "text": prompt,
-            },
 
-            {
-                "type": "document",
-                "data": pdf_base64,
-                "mime_type": "application/pdf",
-            },
-        ]
+Analyze the resume according to your instructions.
 
-    else:
-
-        input_data = prompt
-
-    # --------------------------------------------------------
-    # Gemini request
-    # --------------------------------------------------------
+Return only the JSON object matching the ATS schema.
+"""
 
     try:
-
-        interaction = client.interactions.create(
-
+        response = client.chat.completions.create(
             model=MODEL,
-
-            input=input_data,
-
+            messages=[
+                {
+                    "role": "system",
+                    "content": SYSTEM_PROMPT,
+                },
+                {
+                    "role": "user",
+                    "content": user_prompt,
+                },
+            ],
+            temperature=0,
             response_format={
-                "type": "text",
-                "mime_type": "application/json",
-                "schema": ATS_SCHEMA,
+                "type": "json_schema",
+                "json_schema": {
+                    "name": "ats_analysis",
+                    "strict": True,
+                    "schema": ATS_SCHEMA,
+                },
             },
         )
 
@@ -616,39 +465,362 @@ def analyze_resume(
 
         error_text = str(exc)
 
-        # Show the actual Gemini error.
-        # This is intentionally NOT hidden behind retries.
+        if "429" in error_text or "rate_limit" in error_text.lower():
+            raise RuntimeError(
+                "Groq rate limit reached. "
+                "Please wait and try again later."
+            ) from exc
+
+        if "401" in error_text or "authentication" in error_text.lower():
+            raise RuntimeError(
+                "Groq API key is invalid or not configured correctly."
+            ) from exc
+
+        if "model" in error_text.lower() and (
+            "not found" in error_text.lower()
+            or "does not exist" in error_text.lower()
+        ):
+            raise RuntimeError(
+                f"The Groq model '{MODEL}' is unavailable. "
+                "Check the model name in the application."
+            ) from exc
 
         raise RuntimeError(
-            f"Gemini API error: "
-            f"{type(exc).__name__}: "
-            f"{error_text}"
+            f"Groq API error: {type(exc).__name__}: {exc}"
         ) from exc
 
-    # --------------------------------------------------------
-    # Read response
-    # --------------------------------------------------------
+    if not response.choices:
+        raise RuntimeError(
+            "Groq returned no response choices."
+        )
 
-    output_text = getattr(
-        interaction,
-        "output_text",
-        None,
-    )
+    output_text = response.choices[0].message.content
 
     if not output_text:
-
         raise RuntimeError(
-            "Gemini completed the request "
-            "but returned an empty response."
+            "Groq returned an empty response."
+        )
+
+    try:
+        result = json.loads(output_text)
+
+    except json.JSONDecodeError as exc:
+        raise RuntimeError(
+            "Groq returned invalid JSON."
+        ) from exc
+
+    return result
+
+
+# ============================================================
+# SCORE DISPLAY
+# ============================================================
+
+def score_label(score):
+    if score >= 90:
+        return "Excellent"
+
+    if score >= 80:
+        return "Very Good"
+
+    if score >= 70:
+        return "Good"
+
+    if score >= 60:
+        return "Needs Improvement"
+
+    return "Needs Significant Improvement"
+
+
+def display_category_scores(category_scores):
+
+    st.subheader("📊 Category Scores")
+
+    categories = [
+        (
+            "Structure & Formatting",
+            "structure_formatting",
+            20,
+        ),
+        (
+            "Contact & Summary",
+            "contact_summary",
+            10,
+        ),
+        (
+            "Skills & Keywords",
+            "skills_keywords",
+            20,
+        ),
+        (
+            "Experience",
+            "experience",
+            25,
+        ),
+        (
+            "Education & Certifications",
+            "education_certifications",
+            10,
+        ),
+        (
+            "Clarity & Consistency",
+            "clarity_consistency",
+            10,
+        ),
+        (
+            "ATS Risk Factors",
+            "ats_risk_factors",
+            5,
+        ),
+    ]
+
+    cols = st.columns(4)
+
+    for index, (label, key, maximum) in enumerate(categories):
+
+        value = category_scores.get(key, 0)
+
+        col = cols[index % 4]
+
+        with col:
+            st.metric(
+                label,
+                f"{value}/{maximum}",
+            )
+
+
+# ============================================================
+# RESULTS DISPLAY
+# ============================================================
+
+def display_results(result):
+
+    # --------------------------------------------------------
+    # Overall score
+    # --------------------------------------------------------
+
+    score = int(result.get("ats_score", 0))
+
+    label = result.get(
+        "score_label",
+        score_label(score),
+    )
+
+    st.divider()
+
+    st.subheader("🎯 ATS Score")
+
+    score_col, summary_col = st.columns([1, 2])
+
+    with score_col:
+        st.metric(
+            "Overall Score",
+            f"{score}/100",
+        )
+
+        st.progress(
+            max(0, min(score, 100)) / 100
+        )
+
+        st.caption(label)
+
+    with summary_col:
+        st.markdown("### Summary")
+        st.write(
+            result.get(
+                "summary",
+                "No summary available.",
+            )
         )
 
     # --------------------------------------------------------
-    # Convert JSON
+    # Category scores
     # --------------------------------------------------------
 
-    return clean_json(
-        output_text
+    category_scores = result.get(
+        "category_scores",
+        {},
     )
+
+    display_category_scores(category_scores)
+
+    # --------------------------------------------------------
+    # Strengths
+    # --------------------------------------------------------
+
+    st.divider()
+
+    st.subheader("✅ Strengths")
+
+    strengths = result.get(
+        "strengths",
+        [],
+    )
+
+    if strengths:
+
+        for strength in strengths:
+            st.success(strength)
+
+    else:
+        st.info("No specific strengths were identified.")
+
+    # --------------------------------------------------------
+    # Missing keywords
+    # --------------------------------------------------------
+
+    st.subheader("🔑 Missing Keywords")
+
+    missing_keywords = result.get(
+        "missing_keywords",
+        [],
+    )
+
+    if missing_keywords:
+
+        keyword_text = ", ".join(
+            missing_keywords
+        )
+
+        st.warning(keyword_text)
+
+    else:
+        st.success(
+            "No major missing keywords were identified."
+        )
+
+    # --------------------------------------------------------
+    # Keyword alignment
+    # --------------------------------------------------------
+
+    st.subheader("🔎 Keyword Alignment")
+
+    st.write(
+        result.get(
+            "keyword_alignment",
+            "No keyword alignment analysis available.",
+        )
+    )
+
+    # --------------------------------------------------------
+    # Formatting risks
+    # --------------------------------------------------------
+
+    st.subheader("⚠️ Formatting & ATS Risks")
+
+    formatting_risks = result.get(
+        "formatting_risks",
+        [],
+    )
+
+    if formatting_risks:
+
+        for risk in formatting_risks:
+            st.warning(risk)
+
+    else:
+        st.success(
+            "No significant ATS formatting risks identified."
+        )
+
+    # --------------------------------------------------------
+    # Improvements
+    # --------------------------------------------------------
+
+    st.divider()
+
+    st.subheader("🛠️ Recommended Improvements")
+
+    improvements = result.get(
+        "improvements",
+        [],
+    )
+
+    if improvements:
+
+        for improvement in improvements:
+
+            priority = improvement.get(
+                "priority",
+                "Medium",
+            )
+
+            issue = improvement.get(
+                "issue",
+                "",
+            )
+
+            recommendation = improvement.get(
+                "recommendation",
+                "",
+            )
+
+            with st.expander(
+                f"{priority}: {issue}"
+            ):
+
+                st.write(
+                    recommendation
+                )
+
+    else:
+        st.info(
+            "No specific improvements were identified."
+        )
+
+    # --------------------------------------------------------
+    # Section feedback
+    # --------------------------------------------------------
+
+    st.divider()
+
+    st.subheader("📝 Section-by-Section Feedback")
+
+    feedback = result.get(
+        "section_feedback",
+        {},
+    )
+
+    tabs = st.tabs(
+        [
+            "Summary",
+            "Skills",
+            "Experience",
+            "Education",
+        ]
+    )
+
+    with tabs[0]:
+        st.write(
+            feedback.get(
+                "summary",
+                "No feedback available.",
+            )
+        )
+
+    with tabs[1]:
+        st.write(
+            feedback.get(
+                "skills",
+                "No feedback available.",
+            )
+        )
+
+    with tabs[2]:
+        st.write(
+            feedback.get(
+                "experience",
+                "No feedback available.",
+            )
+        )
+
+    with tabs[3]:
+        st.write(
+            feedback.get(
+                "education",
+                "No feedback available.",
+            )
+        )
 
 
 # ============================================================
@@ -657,44 +829,75 @@ def analyze_resume(
 
 with st.sidebar:
 
-    st.header("Settings")
-
-    st.info(
-        "Add your Gemini API key in "
-        "Streamlit Cloud → App settings → Secrets."
-    )
+    st.title("📄 Resume ATS Analyzer")
 
     st.markdown(
-        f"**Model:** `{MODEL}`"
-    )
+        """
+### About
 
-    st.markdown(
-        "**API:** Gemini Interactions API"
+Analyze your resume for:
+
+- ATS compatibility
+- Keywords
+- Formatting risks
+- Experience
+- Education
+- Skills
+- Job-description alignment
+"""
     )
 
     st.divider()
 
-    st.caption(
-        "PDF, DOCX and TXT resumes are supported."
+    st.markdown("### 🤖 AI Model")
+
+    st.code(
+        MODEL,
+        language="text",
     )
+
+    st.caption(
+        "Powered by Groq"
+    )
+
+    st.divider()
+
+    st.markdown("### 🔒 Privacy")
+
+    st.caption(
+        "Your uploaded resume is processed for "
+        "the current analysis and is not stored "
+        "by this application."
+    )
+
+
+# ============================================================
+# MAIN APPLICATION
+# ============================================================
+
+st.title("📄 Resume ATS Analyzer")
+
+st.markdown(
+    """
+Upload your resume and get an ATS-focused analysis.
+You can optionally provide a job description to check
+keyword alignment and job matching.
+"""
+)
 
 
 # ============================================================
 # FILE UPLOAD
 # ============================================================
 
-uploaded = st.file_uploader(
+uploaded_file = st.file_uploader(
     "Upload your resume",
-
     type=[
         "pdf",
         "docx",
         "txt",
     ],
-
-    help=(
-        "PDF, DOCX, and TXT files are supported."
-    ),
+    help="Supported formats: PDF, DOCX, TXT",
 )
 
 
@@ -703,449 +906,126 @@ uploaded = st.file_uploader(
 # ============================================================
 
 job_description = st.text_area(
-
-    "Optional: paste the job description",
-
-    height=180,
-
+    "Job Description (Optional)",
+    height=220,
     placeholder=(
-        "Adding the target job description makes "
-        "keyword matching and the ATS estimate "
-        "more useful."
+        "Paste the job description here for "
+        "keyword and job-match analysis..."
     ),
 )
-
-
-# ============================================================
-# FILE STATUS
-# ============================================================
-
-if uploaded:
-
-    st.success(
-        f"Loaded: {uploaded.name}"
-    )
 
 
 # ============================================================
 # ANALYZE BUTTON
 # ============================================================
 
-if st.button(
-
+analyze_button = st.button(
     "🔍 Analyze Resume",
-
     type="primary",
+    use_container_width=True,
+)
 
-    disabled=uploaded is None,
-):
+
+# ============================================================
+# ANALYSIS
+# ============================================================
+
+if analyze_button:
+
+    if not uploaded_file:
+
+        st.error(
+            "Please upload a resume first."
+        )
+
+        st.stop()
 
     try:
 
-        # ----------------------------------------------------
-        # Extract resume
-        # ----------------------------------------------------
-
         with st.spinner(
-            "Analyzing resume with Gemini 3.6 Flash..."
+            "Extracting resume text..."
         ):
 
-            resume_text, pdf_data = (
-                extract_resume(uploaded)
+            resume_text = extract_resume_text(
+                uploaded_file
             )
 
-            # -----------------------------------------------
-            # Check text files
-            # -----------------------------------------------
+            resume_text = clean_text(
+                resume_text
+            )
 
-            if (
-                resume_text is not None
-                and not resume_text.strip()
-            ):
+        if not resume_text:
 
-                st.error(
-                    "No readable text was found "
-                    "in the uploaded file."
-                )
+            st.error(
+                "No readable text was found in the uploaded file."
+            )
 
-                st.stop()
+            st.info(
+                "If this is a scanned/image-only PDF, "
+                "OCR may be required."
+            )
 
-            # -----------------------------------------------
-            # Analyze
-            # -----------------------------------------------
+            st.stop()
+
+        # Safety limit for extremely large resumes
+        MAX_CHARS = 60000
+
+        if len(resume_text) > MAX_CHARS:
+
+            resume_text = resume_text[:MAX_CHARS]
+
+            st.warning(
+                "The resume was very large, so the text "
+                "was limited to the first 60,000 characters."
+            )
+
+        with st.spinner(
+            "Analyzing resume with Groq AI..."
+        ):
 
             result = analyze_resume(
-
-                resume_text,
-
-                pdf_data,
-
-                job_description,
+                resume_text=resume_text,
+                job_description=job_description,
             )
 
-        # ====================================================
-        # ATS SCORE
-        # ====================================================
+        st.session_state["ats_result"] = result
 
-        score = int(
-            result.get(
-                "ats_score",
-                0,
-            )
+        st.success(
+            "Analysis completed successfully!"
         )
-
-        score = max(
-            0,
-            min(
-                100,
-                score,
-            ),
-        )
-
-        label = result.get(
-            "score_label",
-            "Needs Improvement",
-        )
-
-        st.subheader(
-            "ATS Compatibility Estimate"
-        )
-
-        c1, c2 = st.columns(
-            [1, 3]
-        )
-
-        with c1:
-
-            st.metric(
-                "Score",
-                f"{score}/100",
-            )
-
-        with c2:
-
-            st.progress(
-                score / 100
-            )
-
-            st.write(
-                f"**{label}**"
-            )
-
-            st.write(
-                result.get(
-                    "summary",
-                    "",
-                )
-            )
-
-        # ====================================================
-        # CATEGORY SCORES
-        # ====================================================
-
-        st.subheader(
-            "Category Scores"
-        )
-
-        scores = result.get(
-            "category_scores",
-            {},
-        )
-
-        categories = [
-
-            (
-                "Structure & formatting",
-                "structure_formatting",
-                20,
-            ),
-
-            (
-                "Contact & summary",
-                "contact_summary",
-                10,
-            ),
-
-            (
-                "Skills & keywords",
-                "skills_keywords",
-                20,
-            ),
-
-            (
-                "Experience",
-                "experience",
-                25,
-            ),
-
-            (
-                "Education & certifications",
-                "education_certifications",
-                10,
-            ),
-
-            (
-                "Clarity & consistency",
-                "clarity_consistency",
-                10,
-            ),
-
-            (
-                "ATS risk factors",
-                "ats_risk_factors",
-                5,
-            ),
-        ]
-
-        cols = st.columns(4)
-
-        for i, (
-            label_text,
-            key,
-            maximum,
-        ) in enumerate(categories):
-
-            with cols[i % 4]:
-
-                try:
-
-                    value = int(
-                        scores.get(
-                            key,
-                            0,
-                        )
-                    )
-
-                except (
-                    TypeError,
-                    ValueError,
-                ):
-
-                    value = 0
-
-                value = max(
-                    0,
-                    min(
-                        maximum,
-                        value,
-                    ),
-                )
-
-                st.metric(
-                    label_text,
-                    f"{value}/{maximum}",
-                )
-
-        # ====================================================
-        # STRENGTHS AND KEYWORDS
-        # ====================================================
-
-        left, right = st.columns(2)
-
-        with left:
-
-            st.subheader(
-                "✅ Strengths"
-            )
-
-            strengths = result.get(
-                "strengths",
-                [],
-            )
-
-            if strengths:
-
-                for item in strengths:
-
-                    st.markdown(
-                        f"- {item}"
-                    )
-
-            else:
-
-                st.write(
-                    "No strengths were returned."
-                )
-
-            st.subheader(
-                "🔑 Missing / Weak Keywords"
-            )
-
-            keywords = result.get(
-                "missing_keywords",
-                [],
-            )
-
-            if keywords:
-
-                st.write(
-                    ", ".join(keywords)
-                )
-
-            else:
-
-                st.write(
-                    "No major missing keywords identified."
-                )
-
-        # ====================================================
-        # FORMATTING RISKS
-        # ====================================================
-
-        with right:
-
-            st.subheader(
-                "⚠️ Formatting Risks"
-            )
-
-            risks = result.get(
-                "formatting_risks",
-                [],
-            )
-
-            if risks:
-
-                for item in risks:
-
-                    st.markdown(
-                        f"- {item}"
-                    )
-
-            else:
-
-                st.write(
-                    "No major ATS formatting risks identified."
-                )
-
-        # ====================================================
-        # IMPROVEMENTS
-        # ====================================================
-
-        st.subheader(
-            "🛠️ Recommended Improvements"
-        )
-
-        improvements = result.get(
-            "improvements",
-            [],
-        )
-
-        if improvements:
-
-            for item in improvements:
-
-                priority = item.get(
-                    "priority",
-                    "Medium",
-                )
-
-                icon = {
-
-                    "High": "🔴",
-
-                    "Medium": "🟠",
-
-                    "Low": "🟢",
-
-                }.get(
-                    priority,
-                    "🔵",
-                )
-
-                with st.expander(
-
-                    f"{icon} {priority}: "
-                    f"{item.get('issue', 'Improvement')}"
-                ):
-
-                    st.write(
-                        item.get(
-                            "recommendation",
-                            "",
-                        )
-                    )
-
-        else:
-
-            st.write(
-                "No specific improvements were returned."
-            )
-
-        # ====================================================
-        # SECTION FEEDBACK
-        # ====================================================
-
-        st.subheader(
-            "📌 Section Feedback"
-        )
-
-        feedback = result.get(
-            "section_feedback",
-            {},
-        )
-
-        for section in [
-
-            "summary",
-            "skills",
-            "experience",
-            "education",
-
-        ]:
-
-            st.markdown(
-                f"**{section.title()}**"
-            )
-
-            st.write(
-                feedback.get(
-                    section,
-                    "No feedback provided.",
-                )
-            )
-
-        # ====================================================
-        # JOB MATCH
-        # ====================================================
-
-        st.subheader(
-            "🎯 Job Match"
-        )
-
-        st.write(
-            result.get(
-                "keyword_alignment",
-                "",
-            )
-        )
-
-        st.caption(
-            "Important: this is an AI-based ATS "
-            "compatibility estimate. Different ATS "
-            "platforms and employers use different "
-            "parsing and ranking rules."
-        )
-
-    # ========================================================
-    # JSON ERROR
-    # ========================================================
-
-    except json.JSONDecodeError:
-
-        st.error(
-            "Gemini returned a response that "
-            "could not be parsed as JSON."
-        )
-
-    # ========================================================
-    # OTHER ERROR
-    # ========================================================
 
     except Exception as exc:
 
         st.error(
             f"Analysis failed: {exc}"
         )
+
+        error_text = str(exc).lower()
+
+        if "rate limit" in error_text:
+
+            st.warning(
+                "Groq's free-tier rate limit has been reached. "
+                "Please wait before trying again."
+            )
+
+        elif "api key" in error_text:
+
+            st.info(
+                "Check your GROQ_API_KEY in "
+                "Streamlit Cloud → Settings → Secrets."
+            )
+
+
+# ============================================================
+# SHOW STORED RESULTS
+# ============================================================
+
+if "ats_result" in st.session_state:
+
+    display_results(
+        st.session_state["ats_result"]
+    )
 
 
 # ============================================================
@@ -1155,7 +1035,7 @@ if st.button(
 st.divider()
 
 st.caption(
-    "Privacy note: resumes contain personal information. "
-    "Avoid uploading sensitive documents you do not want "
-    "processed by a third-party AI service."
+    "Resume ATS Analyzer • AI-assisted resume evaluation • "
+    "Always verify recommendations against the actual job requirements."
 )
+```
