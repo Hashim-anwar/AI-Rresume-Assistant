@@ -1,3 +1,4 @@
-streamlit==1.63.0
-google-genai==2.20.0
-python-docx==1.2.0
+streamlit
+groq
+python-docx
+pypdf
