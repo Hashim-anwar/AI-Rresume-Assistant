@@ -1,4 +1,3 @@
-
 import io
 import json
 import os
@@ -11,7 +10,7 @@ from pypdf import PdfReader
 
 
 # ============================================================
-# PAGE CONFIG
+# PAGE CONFIGURATION
 # ============================================================
 
 st.set_page_config(
@@ -38,13 +37,13 @@ ATS_SCHEMA = {
         "ats_score": {
             "type": "integer",
             "minimum": 0,
-            "maximum": 100,
+            "maximum": 100
         },
         "score_label": {
-            "type": "string",
+            "type": "string"
         },
         "summary": {
-            "type": "string",
+            "type": "string"
         },
         "category_scores": {
             "type": "object",
@@ -52,38 +51,38 @@ ATS_SCHEMA = {
                 "structure_formatting": {
                     "type": "integer",
                     "minimum": 0,
-                    "maximum": 20,
+                    "maximum": 20
                 },
                 "contact_summary": {
                     "type": "integer",
                     "minimum": 0,
-                    "maximum": 10,
+                    "maximum": 10
                 },
                 "skills_keywords": {
                     "type": "integer",
                     "minimum": 0,
-                    "maximum": 20,
+                    "maximum": 20
                 },
                 "experience": {
                     "type": "integer",
                     "minimum": 0,
-                    "maximum": 25,
+                    "maximum": 25
                 },
                 "education_certifications": {
                     "type": "integer",
                     "minimum": 0,
-                    "maximum": 10,
+                    "maximum": 10
                 },
                 "clarity_consistency": {
                     "type": "integer",
                     "minimum": 0,
-                    "maximum": 10,
+                    "maximum": 10
                 },
                 "ats_risk_factors": {
                     "type": "integer",
                     "minimum": 0,
-                    "maximum": 5,
-                },
+                    "maximum": 5
+                }
             },
             "required": [
                 "structure_formatting",
@@ -92,15 +91,15 @@ ATS_SCHEMA = {
                 "experience",
                 "education_certifications",
                 "clarity_consistency",
-                "ats_risk_factors",
+                "ats_risk_factors"
             ],
-            "additionalProperties": False,
+            "additionalProperties": False
         },
         "strengths": {
             "type": "array",
             "items": {
-                "type": "string",
-            },
+                "type": "string"
+            }
         },
         "improvements": {
             "type": "array",
@@ -108,62 +107,62 @@ ATS_SCHEMA = {
                 "type": "object",
                 "properties": {
                     "priority": {
-                        "type": "string",
+                        "type": "string"
                     },
                     "issue": {
-                        "type": "string",
+                        "type": "string"
                     },
                     "recommendation": {
-                        "type": "string",
-                    },
+                        "type": "string"
+                    }
                 },
                 "required": [
                     "priority",
                     "issue",
-                    "recommendation",
+                    "recommendation"
                 ],
-                "additionalProperties": False,
-            },
+                "additionalProperties": False
+            }
         },
         "missing_keywords": {
             "type": "array",
             "items": {
-                "type": "string",
-            },
+                "type": "string"
+            }
         },
         "formatting_risks": {
             "type": "array",
             "items": {
-                "type": "string",
-            },
+                "type": "string"
+            }
         },
         "keyword_alignment": {
-            "type": "string",
+            "type": "string"
         },
         "section_feedback": {
             "type": "object",
             "properties": {
                 "summary": {
-                    "type": "string",
+                    "type": "string"
                 },
                 "skills": {
-                    "type": "string",
+                    "type": "string"
                 },
                 "experience": {
-                    "type": "string",
+                    "type": "string"
                 },
                 "education": {
-                    "type": "string",
-                },
+                    "type": "string"
+                }
             },
             "required": [
                 "summary",
                 "skills",
                 "experience",
-                "education",
+                "education"
             ],
-            "additionalProperties": False,
-        },
+            "additionalProperties": False
+        }
     },
     "required": [
         "ats_score",
@@ -175,98 +174,98 @@ ATS_SCHEMA = {
         "missing_keywords",
         "formatting_risks",
         "keyword_alignment",
-        "section_feedback",
+        "section_feedback"
     ],
-    "additionalProperties": False,
+    "additionalProperties": False
 }
 
 
 # ============================================================
-# SYSTEM PROMPT
+# AI SYSTEM PROMPT
 # ============================================================
 
 SYSTEM_PROMPT = """
-You are an expert ATS resume analyzer and professional recruiter.
+You are an expert ATS resume analyzer, recruiter, and career consultant.
 
 Your task is to analyze a resume conservatively and realistically.
 
 IMPORTANT RULES:
 
-1. Never invent information that is not present in the resume.
-2. Never assume a skill, qualification, certification, job title,
-   achievement, degree, or technology unless supported by the resume.
-3. Give an ATS compatibility estimate, not a guarantee of getting hired.
-4. Be objective and constructive.
-5. Do not penalize a candidate simply because something is not present
-   unless it is genuinely relevant to ATS performance.
-6. Do not reward imaginary achievements.
-7. Separate formatting/ATS issues from actual candidate quality.
-8. If a job description is provided, compare the resume against it.
-9. Identify important keywords from the job description that are missing
-   from the resume.
-10. Do not recommend adding a keyword unless the candidate actually has
-    relevant experience with it.
-11. Keep recommendations practical and specific.
+1. Never invent information.
+2. Never assume a skill, qualification, certification, degree,
+   technology, job title, responsibility, or achievement unless
+   supported by the resume.
+3. Do not create fake experience.
+4. Give an ATS compatibility estimate, not a guarantee of getting hired.
+5. Be objective and constructive.
+6. Separate ATS/formatting issues from candidate quality.
+7. If a job description is provided, compare the resume against it.
+8. Identify important keywords from the job description.
+9. Identify keywords that appear to be missing from the resume.
+10. Do not recommend adding a keyword if there is no evidence that
+    the candidate has relevant experience with it.
+11. Do not encourage keyword stuffing.
+12. Focus on practical improvements.
 
 ATS SCORE:
 
-The total score must be 100 points.
+The total score must be exactly 100 points.
 
-1. Structure and formatting: 20 points
-2. Contact information and summary: 10 points
-3. Skills and keywords: 20 points
-4. Professional experience: 25 points
-5. Education and certifications: 10 points
-6. Clarity and consistency: 10 points
-7. ATS risk factors: 5 points
+Structure and formatting = 20 points
+Contact information and summary = 10 points
+Skills and keywords = 20 points
+Professional experience = 25 points
+Education and certifications = 10 points
+Clarity and consistency = 10 points
+ATS risk factors = 5 points
 
-The final ats_score must equal the sum of the seven category scores.
+The seven category scores must add up to the final ats_score.
 
-SCORING GUIDANCE:
+SCORING:
 
 90-100 = Excellent ATS readiness
-80-89  = Very good
-70-79  = Good but improvements recommended
-60-69  = Needs improvement
-Below 60 = Significant ATS improvements needed
+80-89 = Very Good
+70-79 = Good
+60-69 = Needs Improvement
+Below 60 = Significant Improvement Needed
 
-Consider common ATS risks such as:
+Consider ATS risks such as:
 
-- tables
-- columns
-- text boxes
-- headers/footers containing important information
-- graphics
-- icons replacing text
-- unusual symbols
-- excessive formatting
-- inconsistent dates
-- inconsistent job titles
-- missing contact information
-- poor section headings
-- keyword stuffing
-- overly long paragraphs
-- unclear work history
-- missing measurable achievements
+- Tables
+- Multiple columns
+- Text boxes
+- Graphics
+- Images
+- Icons replacing text
+- Headers and footers containing important information
+- Unusual symbols
+- Excessive formatting
+- Inconsistent dates
+- Inconsistent job titles
+- Missing contact information
+- Poor section headings
+- Keyword stuffing
+- Long paragraphs
+- Unclear employment history
+- Missing measurable achievements
 
-For job matching:
+When analyzing a job description:
 
-- Identify important keywords present in the job description.
-- Identify relevant keywords already present in the resume.
+- Identify important keywords.
+- Identify relevant keywords already present.
 - Identify potentially missing keywords.
-- Do not tell the candidate to add a keyword if the resume provides
-  no evidence that they have that skill.
+- Do not claim that a candidate has a missing skill.
+- Recommend adding a keyword only when supported by actual experience.
 
 Return ONLY valid JSON matching the provided schema.
 """
 
 
 # ============================================================
-# FILE EXTRACTION
+# PDF TEXT EXTRACTION
 # ============================================================
 
 def extract_pdf_text(file_bytes):
-    """Extract text from a PDF."""
     try:
         reader = PdfReader(io.BytesIO(file_bytes))
 
@@ -284,8 +283,11 @@ def extract_pdf_text(file_bytes):
         ) from exc
 
 
+# ============================================================
+# DOCX TEXT EXTRACTION
+# ============================================================
+
 def extract_docx_text(file_bytes):
-    """Extract paragraphs and tables from DOCX."""
     try:
         document = Document(io.BytesIO(file_bytes))
 
@@ -300,14 +302,16 @@ def extract_docx_text(file_bytes):
 
         # Tables
         for table in document.tables:
+
             for row in table.rows:
+
                 cells = []
 
                 for cell in row.cells:
-                    cell_text = cell.text.strip()
+                    text = cell.text.strip()
 
-                    if cell_text:
-                        cells.append(cell_text)
+                    if text:
+                        cells.append(text)
 
                 if cells:
                     parts.append(" | ".join(cells))
@@ -320,8 +324,11 @@ def extract_docx_text(file_bytes):
         ) from exc
 
 
+# ============================================================
+# TXT TEXT EXTRACTION
+# ============================================================
+
 def extract_txt_text(file_bytes):
-    """Extract text from TXT."""
     try:
         return file_bytes.decode(
             "utf-8",
@@ -334,88 +341,118 @@ def extract_txt_text(file_bytes):
         ) from exc
 
 
+# ============================================================
+# GENERAL FILE EXTRACTION
+# ============================================================
+
 def extract_resume_text(uploaded_file):
-    """Detect file type and extract resume text."""
 
     file_bytes = uploaded_file.getvalue()
+
     filename = uploaded_file.name.lower()
 
     if filename.endswith(".pdf"):
         return extract_pdf_text(file_bytes)
 
-    if filename.endswith(".docx"):
+    elif filename.endswith(".docx"):
         return extract_docx_text(file_bytes)
 
-    if filename.endswith(".txt"):
+    elif filename.endswith(".txt"):
         return extract_txt_text(file_bytes)
 
-    raise RuntimeError(
-        "Unsupported file type. Please upload PDF, DOCX, or TXT."
-    )
+    else:
+        raise RuntimeError(
+            "Unsupported file type. Please upload PDF, DOCX, or TXT."
+        )
 
 
 # ============================================================
-# TEXT CLEANING
+# CLEAN TEXT
 # ============================================================
 
 def clean_text(text):
-    """Clean excessive whitespace while preserving useful structure."""
 
     if not text:
         return ""
 
     text = text.replace("\x00", " ")
 
-    # Normalize line endings
-    text = text.replace("\r\n", "\n")
-    text = text.replace("\r", "\n")
+    text = text.replace(
+        "\r\n",
+        "\n"
+    )
 
-    # Remove excessive spaces
-    text = re.sub(r"[ \t]+", " ", text)
+    text = text.replace(
+        "\r",
+        "\n"
+    )
 
-    # Remove excessive blank lines
-    text = re.sub(r"\n{3,}", "\n\n", text)
+    text = re.sub(
+        r"[ \t]+",
+        " ",
+        text
+    )
+
+    text = re.sub(
+        r"\n{3,}",
+        "\n\n",
+        text
+    )
 
     return text.strip()
 
 
 # ============================================================
-# GROQ API
+# GET GROQ API KEY
 # ============================================================
 
 def get_groq_api_key():
-    """Get Groq API key from Streamlit secrets or environment."""
+
+    api_key = None
 
     try:
-        api_key = st.secrets.get("GROQ_API_KEY")
+        api_key = st.secrets.get(
+            "GROQ_API_KEY"
+        )
     except Exception:
-        api_key = None
+        pass
 
     if not api_key:
-        api_key = os.getenv("GROQ_API_KEY")
+        api_key = os.getenv(
+            "GROQ_API_KEY"
+        )
 
     return api_key
 
 
+# ============================================================
+# GROQ RESUME ANALYSIS
+# ============================================================
+
 def analyze_resume(
     resume_text,
-    job_description="",
+    job_description
 ):
-    """Send resume to Groq and return structured ATS analysis."""
 
     api_key = get_groq_api_key()
 
     if not api_key:
+
         raise RuntimeError(
-            "GROQ_API_KEY is not configured. "
+            "GROQ_API_KEY is missing. "
             "Add GROQ_API_KEY to Streamlit Secrets."
         )
 
-    client = Groq(api_key=api_key)
+    client = Groq(
+        api_key=api_key
+    )
 
-    job_text = job_description.strip()
+    if job_description.strip():
 
-    if not job_text:
+        job_text = job_description.strip()
+
+    else:
+
         job_text = (
             "No job description was provided. "
             "Analyze the resume for general ATS readiness."
@@ -432,57 +469,78 @@ JOB DESCRIPTION:
 {job_text}
 
 
-Analyze the resume according to your instructions.
+Analyze this resume according to the system instructions.
 
-Return only the JSON object matching the ATS schema.
+Make sure the seven category scores add up exactly to the final ATS score.
+
+Return only valid JSON.
 """
 
     try:
+
         response = client.chat.completions.create(
+
             model=MODEL,
+
             messages=[
                 {
                     "role": "system",
-                    "content": SYSTEM_PROMPT,
+                    "content": SYSTEM_PROMPT
                 },
                 {
                     "role": "user",
-                    "content": user_prompt,
-                },
+                    "content": user_prompt
+                }
             ],
+
             temperature=0,
+
             response_format={
                 "type": "json_schema",
                 "json_schema": {
                     "name": "ats_analysis",
                     "strict": True,
-                    "schema": ATS_SCHEMA,
-                },
-            },
+                    "schema": ATS_SCHEMA
+                }
+            }
         )
 
     except Exception as exc:
 
-        error_text = str(exc)
+        error_text = str(exc).lower()
 
-        if "429" in error_text or "rate_limit" in error_text.lower():
+        if (
+            "429" in error_text
+            or "rate limit" in error_text
+            or "rate_limit" in error_text
+        ):
+
             raise RuntimeError(
                 "Groq rate limit reached. "
                 "Please wait and try again later."
             ) from exc
 
-        if "401" in error_text or "authentication" in error_text.lower():
+        if (
+            "401" in error_text
+            or "authentication" in error_text
+            or "invalid api key" in error_text
+        ):
+
             raise RuntimeError(
-                "Groq API key is invalid or not configured correctly."
+                "Groq API key is invalid. "
+                "Check GROQ_API_KEY in Streamlit Secrets."
             ) from exc
 
-        if "model" in error_text.lower() and (
-            "not found" in error_text.lower()
-            or "does not exist" in error_text.lower()
+        if (
+            "model" in error_text
+            and (
+                "not found" in error_text
+                or "does not exist" in error_text
+            )
         ):
+
             raise RuntimeError(
-                f"The Groq model '{MODEL}' is unavailable. "
-                "Check the model name in the application."
+                f"The model {MODEL} is unavailable."
             ) from exc
 
         raise RuntimeError(
@@ -490,21 +548,32 @@ Return only the JSON object matching the ATS schema.
         ) from exc
 
     if not response.choices:
+
         raise RuntimeError(
-            "Groq returned no response choices."
+            "Groq returned no response."
         )
 
-    output_text = response.choices[0].message.content
+    output_text = (
+        response
+        .choices[0]
+        .message
+        .content
+    )
 
     if not output_text:
+
         raise RuntimeError(
             "Groq returned an empty response."
         )
 
     try:
-        result = json.loads(output_text)
+
+        result = json.loads(
+            output_text
+        )
 
     except json.JSONDecodeError as exc:
+
         raise RuntimeError(
             "Groq returned invalid JSON."
         ) from exc
@@ -513,123 +582,165 @@ Return only the JSON object matching the ATS schema.
 
 
 # ============================================================
-# SCORE DISPLAY
+# SCORE LABEL
 # ============================================================
 
-def score_label(score):
+def get_score_label(score):
+
     if score >= 90:
-        return "Excellent"
+        return "Excellent ATS Readiness"
 
     if score >= 80:
-        return "Very Good"
+        return "Very Good ATS Readiness"
 
     if score >= 70:
-        return "Good"
+        return "Good ATS Readiness"
 
     if score >= 60:
         return "Needs Improvement"
 
-    return "Needs Significant Improvement"
+    return "Significant Improvement Needed"
 
+
+# ============================================================
+# DISPLAY CATEGORY SCORES
+# ============================================================
 
 def display_category_scores(category_scores):
 
-    st.subheader("📊 Category Scores")
+    st.subheader(
+        "📊 Category Scores"
+    )
 
     categories = [
+
         (
             "Structure & Formatting",
             "structure_formatting",
-            20,
+            20
         ),
+
         (
             "Contact & Summary",
             "contact_summary",
-            10,
+            10
         ),
+
         (
             "Skills & Keywords",
             "skills_keywords",
-            20,
+            20
         ),
+
         (
             "Experience",
             "experience",
-            25,
+            25
         ),
+
         (
             "Education & Certifications",
             "education_certifications",
-            10,
+            10
         ),
+
         (
             "Clarity & Consistency",
             "clarity_consistency",
-            10,
+            10
         ),
+
         (
             "ATS Risk Factors",
             "ats_risk_factors",
-            5,
-        ),
+            5
+        )
     ]
 
     cols = st.columns(4)
 
-    for index, (label, key, maximum) in enumerate(categories):
+    for index, (
+        label,
+        key,
+        maximum
+    ) in enumerate(categories):
 
-        value = category_scores.get(key, 0)
+        value = int(
+            category_scores.get(
+                key,
+                0
+            )
+        )
 
-        col = cols[index % 4]
+        with cols[index % 4]:
 
-        with col:
             st.metric(
                 label,
-                f"{value}/{maximum}",
+                f"{value}/{maximum}"
             )
 
 
 # ============================================================
-# RESULTS DISPLAY
+# DISPLAY RESULTS
 # ============================================================
 
 def display_results(result):
+
+    score = int(
+        result.get(
+            "ats_score",
+            0
+        )
+    )
+
+    label = result.get(
+        "score_label",
+        get_score_label(score)
+    )
 
     # --------------------------------------------------------
     # Overall score
     # --------------------------------------------------------
 
-    score = int(result.get("ats_score", 0))
-
-    label = result.get(
-        "score_label",
-        score_label(score),
-    )
-
     st.divider()
 
-    st.subheader("🎯 ATS Score")
+    st.subheader(
+        "🎯 Overall ATS Score"
+    )
 
-    score_col, summary_col = st.columns([1, 2])
+    score_col, summary_col = st.columns(
+        [1, 2]
+    )
 
     with score_col:
+
         st.metric(
-            "Overall Score",
-            f"{score}/100",
+            "ATS Score",
+            f"{score}/100"
         )
 
         st.progress(
-            max(0, min(score, 100)) / 100
+            max(
+                0,
+                min(
+                    score,
+                    100
+                )
+            ) / 100
         )
 
         st.caption(label)
 
     with summary_col:
-        st.markdown("### Summary")
+
+        st.markdown(
+            "### Resume Summary"
+        )
+
         st.write(
             result.get(
                 "summary",
-                "No summary available.",
+                "No summary available."
             )
         )
 
@@ -637,12 +748,12 @@ def display_results(result):
     # Category scores
     # --------------------------------------------------------
 
-    category_scores = result.get(
-        "category_scores",
-        {},
+    display_category_scores(
+        result.get(
+            "category_scores",
+            {}
+        )
     )
-
-    display_category_scores(category_scores)
 
     # --------------------------------------------------------
     # Strengths
@@ -650,41 +761,52 @@ def display_results(result):
 
     st.divider()
 
-    st.subheader("✅ Strengths")
+    st.subheader(
+        "✅ Strengths"
+    )
 
     strengths = result.get(
         "strengths",
-        [],
+        []
     )
 
     if strengths:
 
         for strength in strengths:
-            st.success(strength)
+
+            st.success(
+                strength
+            )
 
     else:
-        st.info("No specific strengths were identified.")
+
+        st.info(
+            "No specific strengths were identified."
+        )
 
     # --------------------------------------------------------
     # Missing keywords
     # --------------------------------------------------------
 
-    st.subheader("🔑 Missing Keywords")
+    st.subheader(
+        "🔑 Missing Keywords"
+    )
 
     missing_keywords = result.get(
         "missing_keywords",
-        [],
+        []
     )
 
     if missing_keywords:
 
-        keyword_text = ", ".join(
-            missing_keywords
+        st.warning(
+            ", ".join(
+                missing_keywords
+            )
         )
 
-        st.warning(keyword_text)
-
     else:
+
         st.success(
             "No major missing keywords were identified."
         )
@@ -693,12 +815,14 @@ def display_results(result):
     # Keyword alignment
     # --------------------------------------------------------
 
-    st.subheader("🔎 Keyword Alignment")
+    st.subheader(
+        "🔎 Keyword Alignment"
+    )
 
     st.write(
         result.get(
             "keyword_alignment",
-            "No keyword alignment analysis available.",
+            "No keyword alignment analysis available."
         )
     )
 
@@ -706,21 +830,27 @@ def display_results(result):
     # Formatting risks
     # --------------------------------------------------------
 
-    st.subheader("⚠️ Formatting & ATS Risks")
+    st.subheader(
+        "⚠️ Formatting & ATS Risks"
+    )
 
     formatting_risks = result.get(
         "formatting_risks",
-        [],
+        []
     )
 
     if formatting_risks:
 
         for risk in formatting_risks:
-            st.warning(risk)
+
+            st.warning(
+                risk
+            )
 
     else:
+
         st.success(
-            "No significant ATS formatting risks identified."
+            "No significant ATS formatting risks were identified."
         )
 
     # --------------------------------------------------------
@@ -729,11 +859,13 @@ def display_results(result):
 
     st.divider()
 
-    st.subheader("🛠️ Recommended Improvements")
+    st.subheader(
+        "🛠️ Recommended Improvements"
+    )
 
     improvements = result.get(
         "improvements",
-        [],
+        []
     )
 
     if improvements:
@@ -742,17 +874,17 @@ def display_results(result):
 
             priority = improvement.get(
                 "priority",
-                "Medium",
+                "Medium"
             )
 
             issue = improvement.get(
                 "issue",
-                "",
+                ""
             )
 
             recommendation = improvement.get(
                 "recommendation",
-                "",
+                ""
             )
 
             with st.expander(
@@ -764,6 +896,7 @@ def display_results(result):
                 )
 
     else:
+
         st.info(
             "No specific improvements were identified."
         )
@@ -774,51 +907,57 @@ def display_results(result):
 
     st.divider()
 
-    st.subheader("📝 Section-by-Section Feedback")
+    st.subheader(
+        "📝 Section-by-Section Feedback"
+    )
 
     feedback = result.get(
         "section_feedback",
-        {},
+        {}
     )
 
-    tabs = st.tabs(
+    tab1, tab2, tab3, tab4 = st.tabs(
         [
             "Summary",
             "Skills",
             "Experience",
-            "Education",
+            "Education"
         ]
     )
 
-    with tabs[0]:
+    with tab1:
+
         st.write(
             feedback.get(
                 "summary",
-                "No feedback available.",
+                "No feedback available."
             )
         )
 
-    with tabs[1]:
+    with tab2:
+
         st.write(
             feedback.get(
                 "skills",
-                "No feedback available.",
+                "No feedback available."
             )
         )
 
-    with tabs[2]:
+    with tab3:
+
         st.write(
             feedback.get(
                 "experience",
-                "No feedback available.",
+                "No feedback available."
             )
         )
 
-    with tabs[3]:
+    with tab4:
+
         st.write(
             feedback.get(
                 "education",
-                "No feedback available.",
+                "No feedback available."
             )
         )
 
@@ -829,31 +968,37 @@ def display_results(result):
 
 with st.sidebar:
 
-    st.title("📄 Resume ATS Analyzer")
+    st.title(
+        "📄 Resume ATS Analyzer"
+    )
 
     st.markdown(
         """
-### About
+### Analyze your resume
 
-Analyze your resume for:
+This application checks:
 
 - ATS compatibility
-- Keywords
-- Formatting risks
-- Experience
-- Education
+- Resume structure
 - Skills
-- Job-description alignment
+- Keywords
+- Professional experience
+- Education
+- Certifications
+- Formatting risks
+- Job description alignment
 """
     )
 
     st.divider()
 
-    st.markdown("### 🤖 AI Model")
+    st.markdown(
+        "### 🤖 AI Model"
+    )
 
     st.code(
         MODEL,
-        language="text",
+        language="text"
     )
 
     st.caption(
@@ -862,32 +1007,36 @@ Analyze your resume for:
 
     st.divider()
 
-    st.markdown("### 🔒 Privacy")
+    st.markdown(
+        "### 🔒 Privacy"
+    )
 
     st.caption(
-        "Your uploaded resume is processed for "
-        "the current analysis and is not stored "
-        "by this application."
+        "The application does not save uploaded resumes "
+        "to its own storage."
     )
 
 
 # ============================================================
-# MAIN APPLICATION
+# MAIN PAGE
 # ============================================================
 
-st.title("📄 Resume ATS Analyzer")
+st.title(
+    "📄 Resume ATS Analyzer"
+)
 
 st.markdown(
     """
-Upload your resume and get an ATS-focused analysis.
-You can optionally provide a job description to check
-keyword alignment and job matching.
+Upload your resume and receive an ATS-focused analysis.
+
+For better results, optionally paste the job description
+you are applying for.
 """
 )
 
 
 # ============================================================
-# FILE UPLOAD
+# RESUME UPLOAD
 # ============================================================
 
 uploaded_file = st.file_uploader(
@@ -895,9 +1044,9 @@ uploaded_file = st.file_uploader(
     type=[
         "pdf",
         "docx",
-        "txt",
+        "txt"
     ],
-    help="Supported formats: PDF, DOCX, TXT",
+    help="Supported formats: PDF, DOCX and TXT"
 )
 
 
@@ -909,9 +1058,9 @@ job_description = st.text_area(
     "Job Description (Optional)",
     height=220,
     placeholder=(
-        "Paste the job description here for "
-        "keyword and job-match analysis..."
-    ),
+        "Paste the complete job description here "
+        "to analyze keyword alignment..."
+    )
 )
 
 
@@ -922,12 +1071,12 @@ job_description = st.text_area(
 analyze_button = st.button(
     "🔍 Analyze Resume",
     type="primary",
-    use_container_width=True,
+    use_container_width=True
 )
 
 
 # ============================================================
-# ANALYSIS
+# RUN ANALYSIS
 # ============================================================
 
 if analyze_button:
@@ -942,8 +1091,12 @@ if analyze_button:
 
     try:
 
+        # ----------------------------------------------------
+        # Extract resume
+        # ----------------------------------------------------
+
         with st.spinner(
-            "Extracting resume text..."
+            "Reading your resume..."
         ):
 
             resume_text = extract_resume_text(
@@ -954,6 +1107,10 @@ if analyze_button:
                 resume_text
             )
 
+        # ----------------------------------------------------
+        # Check extracted text
+        # ----------------------------------------------------
+
         if not resume_text:
 
             st.error(
@@ -961,37 +1118,52 @@ if analyze_button:
             )
 
             st.info(
-                "If this is a scanned/image-only PDF, "
-                "OCR may be required."
+                "If your PDF is a scanned/image-only document, "
+                "OCR will be required."
             )
 
             st.stop()
 
-        # Safety limit for extremely large resumes
+        # ----------------------------------------------------
+        # Limit very large documents
+        # ----------------------------------------------------
+
         MAX_CHARS = 60000
 
         if len(resume_text) > MAX_CHARS:
 
-            resume_text = resume_text[:MAX_CHARS]
+            resume_text = resume_text[
+                :MAX_CHARS
+            ]
 
             st.warning(
-                "The resume was very large, so the text "
-                "was limited to the first 60,000 characters."
+                "The resume was very large. "
+                "Only the first 60,000 characters were analyzed."
             )
 
+        # ----------------------------------------------------
+        # AI analysis
+        # ----------------------------------------------------
+
         with st.spinner(
-            "Analyzing resume with Groq AI..."
+            "Analyzing your resume with Groq AI..."
         ):
 
             result = analyze_resume(
-                resume_text=resume_text,
-                job_description=job_description,
+                resume_text,
+                job_description
             )
 
-        st.session_state["ats_result"] = result
+        # ----------------------------------------------------
+        # Save result in session
+        # ----------------------------------------------------
+
+        st.session_state[
+            "ats_result"
+        ] = result
 
         st.success(
-            "Analysis completed successfully!"
+            "Resume analysis completed successfully!"
         )
 
     except Exception as exc:
@@ -1000,31 +1172,38 @@ if analyze_button:
             f"Analysis failed: {exc}"
         )
 
-        error_text = str(exc).lower()
+        error_text = str(
+            exc
+        ).lower()
 
         if "rate limit" in error_text:
 
             st.warning(
-                "Groq's free-tier rate limit has been reached. "
+                "The Groq rate limit has been reached. "
                 "Please wait before trying again."
             )
 
         elif "api key" in error_text:
 
             st.info(
-                "Check your GROQ_API_KEY in "
+                "Please check GROQ_API_KEY in "
                 "Streamlit Cloud → Settings → Secrets."
             )
 
 
 # ============================================================
-# SHOW STORED RESULTS
+# DISPLAY SAVED RESULT
 # ============================================================
 
-if "ats_result" in st.session_state:
+if (
+    "ats_result"
+    in st.session_state
+):
 
     display_results(
-        st.session_state["ats_result"]
+        st.session_state[
+            "ats_result"
+        ]
     )
 
 
@@ -1038,4 +1217,3 @@ st.caption(
     "Resume ATS Analyzer • AI-assisted resume evaluation • "
     "Always verify recommendations against the actual job requirements."
 )
-```
